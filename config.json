@@ -1,0 +1,49 @@
+{
+  "csr_config": {
+    "common_name": "your-domain.com",
+    "domains": [
+      "your-domain.com",
+      "api.your-domain.com",
+      "www.your-domain.com"
+    ],
+    "key": {
+      "algo": "rsa",
+      "size": 2048
+    },
+    "organization": {
+      "country": "US",
+      "locality": "San Francisco", 
+      "organization": "Your Company",
+      "organizational_unit": "IT Department",
+      "state": "California"
+    },
+    "lifetime_days": 365
+  },
+  "invoice_config": {
+    "customer": {
+      "name": "Test Customer",
+      "address": {
+        "street": "123 Test St",
+        "city": "Test City", 
+        "state": "CA",
+        "postal_code": "90210",
+        "country": "US"
+      }
+    },
+    "items": [
+      {
+        "description": "Professional Services",
+        "quantity": 10,
+        "unit_price": 150.00,
+        "tax_rate": 8.5
+      },
+      {
+        "description": "Software License",
+        "quantity": 1,
+        "unit_price": 299.99,
+        "tax_rate": 0.0
+      }
+    ],
+    "currency": "USD"
+  }
+}
