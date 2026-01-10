@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use goose::prelude::*;
 use openssl::pkey::PKey;
 use openssl::rsa::Rsa;
@@ -9,12 +11,20 @@ struct EnrollDTO {
     csr: String,
 }
 
+// User session data to store CSR
+// #[derive(Serialize, Deserialize)]
+struct UserSessionData {
+    csr: Arc<String>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), GooseError> {
     GooseAttack::initialize()?
         .register_scenario(
             scenario!("CSRAndInvoiceLoadTest")
-                // Weighted transactions - 60% CSR, 40% Invoice
+                // Setup transaction - runs once per user at start
+                .register_transaction(transaction!(setup_user_csr).set_on_start())
+                // Weighted transactions - 50% health, 50% CSR
                 .register_transaction(transaction!(health_check).set_weight(5)?)
                 .register_transaction(transaction!(csr_signing_request).set_weight(5)?),
         )
@@ -28,9 +38,24 @@ async fn health_check(user: &mut GooseUser) -> TransactionResult {
 
     Ok(())
 }
-// CSR Signing Transaction
-async fn csr_signing_request(user: &mut GooseUser) -> TransactionResult {
+// Setup transaction - generates CSR once per user
+async fn setup_user_csr(user: &mut GooseUser) -> TransactionResult {
     let enroll_dto = generate_csr_and_enroll_dto();
+    let session_data = UserSessionData {
+        csr: enroll_dto.csr.into(),
+    };
+    user.set_session_data(session_data);
+    Ok(())
+}
+
+// CSR Signing Transaction - reuses cached CSR
+async fn csr_signing_request(user: &mut GooseUser) -> TransactionResult {
+    let session_data = user
+        .get_session_data::<UserSessionData>()
+        .expect("CSR not found in session data - setup_user_csr should have run first");
+    let enroll_dto = EnrollDTO {
+        csr: session_data.csr.to_string(),
+    };
     let _goose_metrics = user.post_json("/enroll", &enroll_dto).await?;
     Ok(())
 }
