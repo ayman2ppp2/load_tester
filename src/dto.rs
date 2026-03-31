@@ -51,23 +51,8 @@ pub struct UserSessionData {
     pub last_pih: Option<Vec<u8>>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct ClearanceRequest {
-    pub uuid: String,
-    #[serde(rename = "invoice_hash")]
-    pub invoice_hash: String,
-    pub invoice: String,
-}
-
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct ClearanceResponse {
     pub success: bool,
-    pub message: String,
-    pub data: Option<ClearanceData>,
-}
-
-#[derive(Deserialize)]
-pub struct ClearanceData {
-    #[serde(rename = "cleared_invoice")]
-    pub cleared_invoice: String,
 }

@@ -13,8 +13,6 @@ use crate::constants::VALID_TINS;
 pub struct CredentialEntry {
     pub private_key_pem: String,
     pub certificate: Option<String>,
-    pub device_uuid: String,
-    pub tin: String,
 }
 
 pub struct CredentialsPool {
@@ -31,14 +29,12 @@ impl CredentialsPool {
             let private_key_pem = pkey.private_key_to_pem_pkcs8().unwrap();
             let private_key_pem_str = String::from_utf8(private_key_pem).unwrap();
 
-            let device_uuid = Uuid::new_v4().to_string();
-            let tin = VALID_TINS[i % VALID_TINS.len()].to_string();
+            let _device_uuid = Uuid::new_v4().to_string();
+            let _tin = VALID_TINS[i % VALID_TINS.len()].to_string();
 
             entries.push(CredentialEntry {
                 private_key_pem: private_key_pem_str,
                 certificate: None,
-                device_uuid,
-                tin,
             });
             if (i + 1) % 10 == 0 {
                 eprintln!("Pre-generated {}/{} RSA key pairs", i + 1, num_users);
@@ -91,17 +87,6 @@ pub fn store_certificate(index: usize, certificate: String) {
         .store_certificate(index, certificate);
 }
 
-pub fn get_entry_data(index: usize) -> (String, Option<String>, String, String) {
-    let pool = CREDENTIALS_POOL.lock().unwrap();
-    let cred = pool.get_entry(index);
-    (
-        cred.private_key_pem.clone(),
-        cred.certificate.clone(),
-        cred.device_uuid.clone(),
-        cred.tin.clone(),
-    )
-}
-
 pub fn generate_csr_for_pool_entry(device_uuid: &str, tin: &str, private_key_pem: &str) -> String {
     let pkey = PKey::private_key_from_pem(private_key_pem.as_bytes()).unwrap();
 
@@ -121,11 +106,6 @@ pub fn generate_csr_for_pool_entry(device_uuid: &str, tin: &str, private_key_pem
     let req = req_builder.build();
     let der = req.to_der().unwrap();
     base64::engine::general_purpose::STANDARD.encode(der)
-}
-
-pub struct GeneratedCsr {
-    pub csr_der_b64: String,
-    pub private_key_pem: String,
 }
 
 pub fn generate_signed_ubl_invoice(
@@ -730,37 +710,6 @@ fn build_signed_invoice(
         unit_price = unit_price,
         cac_signature = cac_signature
     )
-}
-
-pub fn generate_csr(device_uuid: &str, tin: &str) -> GeneratedCsr {
-    let rsa = Rsa::generate(2048).unwrap();
-    let pkey = PKey::from_rsa(rsa).unwrap();
-
-    let private_key_pem = pkey.private_key_to_pem_pkcs8().unwrap();
-    let private_key_pem_str = String::from_utf8(private_key_pem).unwrap();
-
-    let mut name_builder = X509NameBuilder::new().unwrap();
-    name_builder.append_entry_by_text("O", tin).unwrap();
-    name_builder
-        .append_entry_by_text("serialNumber", device_uuid)
-        .unwrap();
-    let name = name_builder.build();
-
-    let mut req_builder = X509ReqBuilder::new().unwrap();
-    req_builder.set_version(0).unwrap();
-    req_builder.set_subject_name(&name).unwrap();
-    req_builder.set_pubkey(&pkey).unwrap();
-    req_builder.sign(&pkey, MessageDigest::sha256()).unwrap();
-
-    let req = req_builder.build();
-
-    let der = req.to_der().unwrap();
-    let csr_der_b64 = base64::engine::general_purpose::STANDARD.encode(der);
-
-    GeneratedCsr {
-        csr_der_b64,
-        private_key_pem: private_key_pem_str,
-    }
 }
 
 pub fn generate_random_qr_data() -> String {

@@ -4,51 +4,25 @@ mod generator;
 mod pre_enroll;
 mod transactions;
 
+use goose::config::GooseConfiguration;
 use goose::prelude::*;
+use gumdrop::Options;
 
-use constants::DEFAULT_HOST;
 use generator::{init_credentials_pool, CREDENTIALS_POOL};
 use pre_enroll::pre_enroll_all_users;
 use transactions::{health_check, submit_clearance, submit_reporting, verify_qr};
 
 #[tokio::main]
 async fn main() -> Result<(), GooseError> {
-    let args: Vec<String> = std::env::args().collect();
+    let configuration = GooseConfiguration::parse_args_default_or_exit();
+    let goose_attack = GooseAttack::initialize_with_config(configuration.clone())?;
 
-    let mut host = DEFAULT_HOST.to_string();
-    let mut users = 10;
-    let mut run_time = 60;
-
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--host" => {
-                if i + 1 < args.len() {
-                    host = args[i + 1].trim_end_matches('/').to_string();
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--users" => {
-                if i + 1 < args.len() {
-                    users = args[i + 1].parse().unwrap_or(10);
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--run-time" => {
-                if i + 1 < args.len() {
-                    run_time = args[i + 1].parse().unwrap_or(60);
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            _ => i += 1,
-        }
-    }
+    let host = configuration.host.to_string();
+    let users = configuration.users.unwrap_or(10);
+    let run_time: u64 = configuration
+        .run_time
+        .parse()
+        .unwrap_or(60);
 
     println!("Initializing credentials pool with {} users...", users);
     init_credentials_pool(users);
@@ -70,7 +44,7 @@ async fn main() -> Result<(), GooseError> {
 
     let _ = &CREDENTIALS_POOL;
 
-    GooseAttack::initialize()?
+    goose_attack
         .register_scenario(
             scenario!("STCLoadTest")
                 .register_transaction(transaction!(health_check).set_weight(5)?)
