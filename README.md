@@ -1,33 +1,45 @@
-# Load Tester
+# STC Load Tester
 
-A Rust-based load testing tool using Goose framework for testing CSR signing requests and invoice submission requests.
+A Rust-based load testing tool using Goose framework for testing the Sudanese Taxation Chamber (STC) Electronic Invoicing Server.
 
 ## Features
 
-- **CSR Signing Requests** - Certificate signing request load testing
-- **Invoice Submission Requests** - Financial invoice submission load testing  
+- **Full API Testing** - Tests all STC server endpoints
+- **Device Enrollment** - PKI-based CSR generation and enrollment
+- **Invoice Submission** - UBL 2.1 invoice generation for clearance and reporting
+- **QR Verification** - QR code verification endpoint testing
 - **Realistic Test Data** - Dynamic generation of realistic payloads
-- **Comprehensive Metrics** - Response times, success rates, percentiles
-- **Professional Reports** - HTML reports with detailed statistics
+- **Sandbox Mode** - All invoice submissions use sandbox mode for testing
+
+## Endpoints Tested
+
+| Endpoint | Weight | Description |
+|----------|--------|-------------|
+| `/health_check` | 30% | Server health check |
+| `/onboard` | 10% | Token generation |
+| `/enroll` | 10% | Device enrollment with CSR |
+| `/clear` | 25% | Invoice clearance submission |
+| `/report` | 20% | Invoice reporting submission |
+| `/verify_qr` | 5% | QR code verification |
 
 ## Usage
 
 ### Basic Usage
 ```bash
 # Run load test against your server
-cargo run -- --host https://your-api.com -u 50 -t 60s
+cargo run --release -- --host http://localhost:8080 -u 50 -t 60s
 
 # Generate HTML report
-cargo run -- --host https://your-api.com -u 100 -t 120s --report-file report.html
+cargo run --release -- --host http://localhost:8080 -u 100 -t 120s --report-file report.html
 
 # Enable detailed logging
-cargo run -- --host https://your-api.com -u 25 -t 30s \
+cargo run --release -- --host http://localhost:8080 -u 25 -t 30s \
   --request-log requests.log --transaction-log transactions.log
 ```
 
 ### Configuration Options
 
-- `--host` - Target server URL
+- `--host` - Target server URL (default: http://localhost:8080)
 - `-u, --users` - Number of concurrent users (default: CPU count)
 - `-t, --run-time` - Test duration (e.g., 30s, 10m, 1h)
 - `-r, --hatch-rate` - Users spawned per second (default: 1)
@@ -37,25 +49,23 @@ cargo run -- --host https://your-api.com -u 25 -t 30s \
 
 ## Test Data
 
-### CSR Signing Requests
-- Common name: api.example.com
-- Domains: Multiple subdomains
-- Key algorithm: RSA 2048-bit
-- Certificate details: US-based organization
+### Device Enrollment
+- RSA 2048-bit key generation
+- CSR with subject containing TIN (organizationName) and device UUID (serialNumber)
+- Base64 DER encoded CSR format
 
-### Invoice Submission Requests  
-- Dynamic customer IDs and invoice numbers
-- Multiple line items (services, licenses)
-- Realistic pricing and tax calculations
-- US addresses and contact info
+### Invoice Submission
+- Valid UBL 2.1 XML invoices
+- Dynamic invoice IDs and amounts
+- Clearance profile (clearance:1.0)
+- SGD currency (Sudanese Pound)
+- Tax calculations included
 
-## Load Distribution
-
-By default, the load tester runs:
-- **60% CSR signing requests**
-- **40% invoice submission requests**
-
-This can be modified by changing the weights in the source code.
+### Valid TINs
+The load tester uses these test TINs:
+- 399999999900003
+- 399999999900001
+- 399999999900002
 
 ## Building
 
@@ -71,20 +81,22 @@ cargo build --release
 
 ```bash
 # Light load test
-./target/release/load_tester --host https://api.example.com -u 10 -t 30s
+./target/release/load_tester --host http://localhost:8080 -u 10 -t 30s
 
 # Heavy load test with reporting
-./target/release/load_tester --host https://api.example.com -u 200 -t 300s \
+./target/release/load_tester --host http://localhost:8080 -u 200 -t 300s \
   --report-file load_test_report.html
 
 # Rate-limited test
-./target/release/load_tester --host https://api.example.com -u 50 -r 5 -t 120s
+./target/release/load_tester --host http://localhost:8080 -u 50 -r 5 -t 120s
 ```
 
-## API Endpoints
+## API Endpoints Tested
 
-The load tester targets these endpoints:
-- `POST /api/csr/sign` - CSR signing requests
-- `POST /api/invoices/submit` - Invoice submission requests
-
-Make sure your server implements these endpoints with the expected JSON payload formats.
+The load tester targets these STC server endpoints:
+- `GET /health_check` - Server health check
+- `POST /onboard` - Generate enrollment token
+- `POST /enroll` - Device enrollment with CSR
+- `POST /clear` - Submit invoice for clearance (sandbox mode)
+- `POST /report` - Submit invoice for reporting (sandbox mode)
+- `POST /verify_qr` - Verify QR code
