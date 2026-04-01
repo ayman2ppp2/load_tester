@@ -424,15 +424,11 @@ pub fn extract_invoice_for_signing(full_invoice_xml: &str) -> String {
                         }
                     }
                     State::InInvoice => {
-                        if name_str == "Invoice" {
+                        
                             output.extend_from_slice(b"</");
                             output.extend_from_slice(e.as_ref());
                             output.extend_from_slice(b">");
-                        } else {
-                            output.extend_from_slice(b"</");
-                            output.extend_from_slice(e.as_ref());
-                            output.extend_from_slice(b">");
-                        }
+                        
                     }
                 }
             }
@@ -551,7 +547,7 @@ pub fn sign_invoice_template_based(
     let mut hasher = Sha256::new();
     hasher.update(canonical.as_bytes());
     let invoice_hash = hasher.finalize();
-    let invoice_hash_b64 = base64::engine::general_purpose::STANDARD.encode(&invoice_hash);
+    let invoice_hash_b64 = base64::engine::general_purpose::STANDARD.encode(invoice_hash);
 
     let pkey = PKey::private_key_from_pem(private_key_pem.as_bytes()).unwrap();
     let mut signer = Signer::new(MessageDigest::sha256(), &pkey).unwrap();
@@ -582,7 +578,7 @@ pub fn sign_invoice_template_based(
         (cert_digest_b64, cert_der_b64, serial_str)
     } else {
         let dummy_digest = Sha256::digest(b"dummy");
-        let dummy_digest_b64 = base64::engine::general_purpose::STANDARD.encode(&dummy_digest);
+        let dummy_digest_b64 = base64::engine::general_purpose::STANDARD.encode(dummy_digest);
         (dummy_digest_b64, String::new(), "1".to_string())
     };
 
