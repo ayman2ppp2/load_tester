@@ -6,6 +6,7 @@ use openssl::rsa::Rsa;
 use openssl::x509::X509NameBuilder;
 use openssl::x509::X509ReqBuilder;
 use rand::Rng;
+use tracing::{debug, instrument};
 use uuid::Uuid;
 
 use crate::constants::VALID_TINS;
@@ -13,6 +14,9 @@ use crate::constants::VALID_TINS;
 pub struct CredentialEntry {
     pub private_key_pem: String,
     pub certificate: Option<String>,
+    pub credential_index: Option<usize>,
+    pub device_uuid: Option<String>,
+    pub tin: Option<String>,
 }
 
 pub struct CredentialsPool {
@@ -29,12 +33,15 @@ impl CredentialsPool {
             let private_key_pem = pkey.private_key_to_pem_pkcs8().unwrap();
             let private_key_pem_str = String::from_utf8(private_key_pem).unwrap();
 
-            let _device_uuid = Uuid::new_v4().to_string();
-            let _tin = VALID_TINS[i % VALID_TINS.len()].to_string();
+            let device_uuid = Uuid::new_v4().to_string();
+            let tin = VALID_TINS[i % VALID_TINS.len()].to_string();
 
             entries.push(CredentialEntry {
                 private_key_pem: private_key_pem_str,
                 certificate: None,
+                credential_index: Some(i),
+                device_uuid: Some(device_uuid),
+                tin: Some(tin),
             });
             if (i + 1) % 10 == 0 {
                 eprintln!("Pre-generated {}/{} RSA key pairs", i + 1, num_users);
@@ -63,6 +70,23 @@ impl CredentialsPool {
         self.entries[idx].certificate = Some(certificate);
     }
 
+    pub fn store_full_credential(
+        &mut self,
+        index: usize,
+        certificate: String,
+        device_uuid: String,
+        tin: String,
+    ) {
+        let idx = index % self.entries.len();
+        self.entries[idx].certificate = Some(certificate);
+        self.entries[idx].device_uuid = Some(device_uuid);
+        self.entries[idx].tin = Some(tin);
+    }
+
+    pub fn get_entry_by_user(&self, user_index: usize) -> &CredentialEntry {
+        &self.entries[user_index % self.entries.len()]
+    }
+
     pub fn get_entry(&self, index: usize) -> &CredentialEntry {
         &self.entries[index % self.entries.len()]
     }
@@ -80,11 +104,31 @@ pub fn get_credential_index() -> usize {
     CREDENTIALS_POOL.lock().unwrap().get_credential()
 }
 
+pub fn get_credential_index_for_user(user_index: usize) -> usize {
+    let pool = CREDENTIALS_POOL.lock().unwrap();
+    pool.get_entry_by_user(user_index)
+        .credential_index
+        .unwrap_or_else(|| user_index)
+}
+
 pub fn store_certificate(index: usize, certificate: String) {
     CREDENTIALS_POOL
         .lock()
         .unwrap()
         .store_certificate(index, certificate);
+}
+
+pub fn store_full_credential(index: usize, certificate: String, device_uuid: String, tin: String) {
+    CREDENTIALS_POOL
+        .lock()
+        .unwrap()
+        .store_full_credential(index, certificate, device_uuid, tin);
+}
+
+pub fn enroll_and_store(index: usize, certificate: String) {
+    let mut pool = CREDENTIALS_POOL.lock().unwrap();
+    let idx = index % pool.entries.len();
+    pool.entries[idx].certificate = Some(certificate);
 }
 
 pub fn generate_csr_for_pool_entry(device_uuid: &str, tin: &str, private_key_pem: &str) -> String {
@@ -424,11 +468,9 @@ pub fn extract_invoice_for_signing(full_invoice_xml: &str) -> String {
                         }
                     }
                     State::InInvoice => {
-                        
-                            output.extend_from_slice(b"</");
-                            output.extend_from_slice(e.as_ref());
-                            output.extend_from_slice(b">");
-                        
+                        output.extend_from_slice(b"</");
+                        output.extend_from_slice(e.as_ref());
+                        output.extend_from_slice(b">");
                     }
                 }
             }
@@ -555,7 +597,14 @@ pub fn sign_invoice_template_based(
     let signature = signer.sign_to_vec().unwrap();
     let signature_b64 = base64::engine::general_purpose::STANDARD.encode(&signature);
 
+    let cert_valid = certificate_b64.starts_with("-----BEGIN");
+    debug!(
+        cert_len = certificate_b64.len(),
+        has_pem_header = cert_valid,
+        "Parsing certificate for signing"
+    );
     let cert = X509::from_pem(certificate_b64.as_bytes()).ok();
+    debug!(cert_parsed = cert.is_some(), "Certificate parse result");
 
     let (cert_digest_b64, cert_der_b64, issuer_serial) = if let Some(cert) = &cert {
         let cert_der = cert.to_der().unwrap_or_default();

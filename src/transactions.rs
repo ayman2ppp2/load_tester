@@ -1,11 +1,13 @@
 use base64::Engine;
 use goose::prelude::*;
-use rand::Rng;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use tracing::debug;
 use uuid::Uuid;
 
-use crate::constants::VALID_TINS;
-use crate::dto::{ClearanceResponse, EnrollRequest, EnrollResponse, OnboardRequest, OnboardResponse, QrVerifyRequest, UserSessionData};
-use crate::generator::{generate_csr_for_pool_entry, generate_random_qr_data, generate_signed_ubl_invoice, get_credential_index, store_certificate, CREDENTIALS_POOL};
+use crate::dto::{ClearanceResponse, QrVerifyRequest, UserSessionData};
+use crate::generator::{generate_random_qr_data, generate_signed_ubl_invoice, CREDENTIALS_POOL};
+
+static USER_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn der_base64_to_pem(der_b64: &str) -> Option<String> {
     use openssl::x509::X509;
@@ -38,83 +40,34 @@ pub async fn onboard_and_enroll(user: &mut GooseUser) -> TransactionResult {
         return Ok(());
     }
 
-    let cred_index = get_credential_index();
-    let private_key_pem = {
+    let user_index = USER_INDEX_COUNTER.fetch_add(1, Ordering::SeqCst);
+    
+    let (private_key_pem, device_uuid, tin, certificate) = {
         let pool = CREDENTIALS_POOL.lock().unwrap();
-        let cred = pool.get_entry(cred_index);
-        cred.private_key_pem.clone()
-    };
-
-    let device_uuid = Uuid::new_v4().to_string();
-    let tin = {
-        let mut rng = rand::rng();
-        VALID_TINS[rng.random_range(0..VALID_TINS.len())].to_string()
-    };
-
-    let csr_der_b64 = generate_csr_for_pool_entry(&device_uuid, &tin, &private_key_pem);
-
-    let onboard_request = OnboardRequest {
-        name: format!("Device {}", &device_uuid[..8]),
-        email: format!("device-{}@test.com", &device_uuid[..8]),
-        company_id: tin.clone(),
-    };
-
-    let response = user.post_json("/onboard", &onboard_request).await?;
-
-    let token = match response.response {
-        Ok(resp) => {
-            match resp.json::<OnboardResponse>().await {
-                Ok(json) => json.token,
-                Err(_) => format!("{}:{}", tin, device_uuid),
-            }
+        let cred = pool.get_entry(user_index);
+        
+        if let (Some(cert), Some(dev_uuid), Some(t)) = (&cred.certificate, &cred.device_uuid, &cred.tin) {
+            debug!(user_index, tin = %t, "Using pre-enrolled credential");
+            let cert_pem = der_base64_to_pem(cert);
+            (cred.private_key_pem.clone(), dev_uuid.clone(), t.clone(), cert_pem)
+        } else {
+            debug!(user_index, "No pre-enrolled credential found");
+            (String::new(), String::new(), String::new(), None)
         }
-        Err(_) => format!("{}:{}", tin, device_uuid),
-    };
-
-    let enroll_request = EnrollRequest {
-        token: token.clone(),
-        csr: csr_der_b64,
-    };
-
-    let response = user.post_json("/enroll", &enroll_request).await?;
-
-    let certificate = match response.response {
-        Ok(resp) => {
-            match resp.json::<EnrollResponse>().await {
-                Ok(json) => {
-                    if json.success {
-                        if let Some(ref data) = json.data {
-                            let cert = der_base64_to_pem(&data.certificate);
-                            if cert.is_some() {
-                                store_certificate(cred_index, data.certificate.clone());
-                            }
-                            cert
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                }
-                Err(_) => None,
-            }
-        }
-        Err(_) => None,
     };
 
     let session_data = UserSessionData {
-        token,
+        token: format!("{}:{}", tin, device_uuid),
         device_uuid,
-        tin: tin.clone(),
+        tin,
         certificate,
         private_key_pem: Some(private_key_pem),
-        credential_index: Some(cred_index),
+        credential_index: Some(user_index),
         icv: 0,
         last_pih: None,
     };
 
     user.set_session_data(session_data);
-
     Ok(())
 }
 
@@ -127,16 +80,10 @@ pub async fn submit_clearance(user: &mut GooseUser) -> TransactionResult {
 
     let sess = user.get_session_data::<UserSessionData>().cloned().unwrap();
 
-    let (key, cert): (String, Option<String>) = if let Some(cred_index) = sess.credential_index {
-        let pool = CREDENTIALS_POOL.lock().unwrap();
-        let cred = pool.get_entry(cred_index);
-        (cred.private_key_pem.clone(), cred.certificate.clone())
-    } else {
-        (
-            sess.private_key_pem.clone().unwrap_or_default(),
-            sess.certificate.clone(),
-        )
-    };
+    let (key, cert) = (
+        sess.private_key_pem.clone().unwrap_or_default(),
+        sess.certificate.clone(),
+    );
 
     let icv = sess.icv;
     let pih = sess.last_pih.clone();
@@ -213,16 +160,10 @@ pub async fn submit_reporting(user: &mut GooseUser) -> TransactionResult {
 
     let sess = user.get_session_data::<UserSessionData>().cloned().unwrap();
 
-    let (key, cert): (String, Option<String>) = if let Some(cred_index) = sess.credential_index {
-        let pool = CREDENTIALS_POOL.lock().unwrap();
-        let cred = pool.get_entry(cred_index);
-        (cred.private_key_pem.clone(), cred.certificate.clone())
-    } else {
-        (
-            sess.private_key_pem.clone().unwrap_or_default(),
-            sess.certificate.clone(),
-        )
-    };
+    let (key, cert) = (
+        sess.private_key_pem.clone().unwrap_or_default(),
+        sess.certificate.clone(),
+    );
 
     let icv = sess.icv;
     let pih = sess.last_pih.clone();

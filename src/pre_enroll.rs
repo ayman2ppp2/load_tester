@@ -1,24 +1,23 @@
 use reqwest::Client;
 use std::error::Error;
-use uuid::Uuid;
 
-use crate::constants::VALID_TINS;
 use crate::dto::{EnrollRequest, EnrollResponse, OnboardRequest, OnboardResponse};
-use crate::generator::{generate_csr_for_pool_entry, get_credential_index, store_certificate, CREDENTIALS_POOL};
+use crate::generator::{generate_csr_for_pool_entry, store_full_credential, CREDENTIALS_POOL};
 
 pub async fn pre_enroll_user(
     client: &Client,
     host: &str,
     user_index: usize,
 ) -> Result<usize, Box<dyn Error + Send + Sync>> {
-    let cred_index = get_credential_index();
-    let private_key_pem = {
+    let (private_key_pem, device_uuid, tin) = {
         let pool = CREDENTIALS_POOL.lock().unwrap();
-        pool.get_entry(cred_index).private_key_pem.clone()
+        let cred = pool.get_entry(user_index);
+        (
+            cred.private_key_pem.clone(),
+            cred.device_uuid.clone().unwrap_or_default(),
+            cred.tin.clone().unwrap_or_default(),
+        )
     };
-
-    let device_uuid = Uuid::new_v4().to_string();
-    let tin = VALID_TINS[user_index % VALID_TINS.len()].to_string();
 
     let csr_der_b64 = generate_csr_for_pool_entry(&device_uuid, &tin, &private_key_pem);
 
@@ -52,9 +51,9 @@ pub async fn pre_enroll_user(
 
     if enroll_response.success {
         if let Some(data) = enroll_response.data {
-            store_certificate(cred_index, data.certificate);
+            store_full_credential(user_index, data.certificate, device_uuid.clone(), tin.clone());
         }
-        Ok(cred_index)
+        Ok(user_index)
     } else {
         Err(format!("Enrollment failed for user {}", user_index).into())
     }

@@ -7,13 +7,26 @@ mod transactions;
 use goose::config::GooseConfiguration;
 use goose::prelude::*;
 use gumdrop::Options;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use generator::{init_credentials_pool, CREDENTIALS_POOL};
 use pre_enroll::pre_enroll_all_users;
 use transactions::{health_check, submit_clearance, submit_reporting, verify_qr};
 
+fn init_tracing() {
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("load_tester=debug,transaction=debug"));
+
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(filter)
+        .init();
+}
+
 #[tokio::main]
 async fn main() -> Result<(), GooseError> {
+    init_tracing();
+
     let configuration = GooseConfiguration::parse_args_default_or_exit();
     let goose_attack = GooseAttack::initialize_with_config(configuration.clone())?;
 
@@ -32,6 +45,8 @@ async fn main() -> Result<(), GooseError> {
         .await
         .expect("Failed to pre-enroll users");
     println!("All users pre-enrolled successfully!");
+    
+    println!("Starting load test...");
 
     println!("\nLoad testing STC Server: {}", host);
     println!("Configuration:");
