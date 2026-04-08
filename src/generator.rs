@@ -6,7 +6,7 @@ use openssl::rsa::Rsa;
 use openssl::x509::X509NameBuilder;
 use openssl::x509::X509ReqBuilder;
 use rand::Rng;
-use tracing::{debug, instrument};
+use tracing::debug;
 use uuid::Uuid;
 
 use crate::constants::VALID_TINS;
@@ -14,14 +14,14 @@ use crate::constants::VALID_TINS;
 pub struct CredentialEntry {
     pub private_key_pem: String,
     pub certificate: Option<String>,
-    pub credential_index: Option<usize>,
+    // pub credential_index: Option<usize>,
     pub device_uuid: Option<String>,
     pub tin: Option<String>,
 }
 
 pub struct CredentialsPool {
     entries: Vec<CredentialEntry>,
-    next_index: std::sync::atomic::AtomicUsize,
+    // next_index: std::sync::atomic::AtomicUsize,
 }
 
 impl CredentialsPool {
@@ -39,7 +39,7 @@ impl CredentialsPool {
             entries.push(CredentialEntry {
                 private_key_pem: private_key_pem_str,
                 certificate: None,
-                credential_index: Some(i),
+                // credential_index: Some(i),
                 device_uuid: Some(device_uuid),
                 tin: Some(tin),
             });
@@ -54,21 +54,21 @@ impl CredentialsPool {
 
         Self {
             entries,
-            next_index: std::sync::atomic::AtomicUsize::new(0),
+            // next_index: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
-    pub fn get_credential(&self) -> usize {
-        let idx = self
-            .next_index
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        idx % self.entries.len()
-    }
+    // pub fn get_credential(&self) -> usize {
+    //     let idx = self
+    //         .next_index
+    //         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    //     idx % self.entries.len()
+    // }
 
-    pub fn store_certificate(&mut self, index: usize, certificate: String) {
-        let idx = index % self.entries.len();
-        self.entries[idx].certificate = Some(certificate);
-    }
+    // pub fn store_certificate(&mut self, index: usize, certificate: String) {
+    //     let idx = index % self.entries.len();
+    //     self.entries[idx].certificate = Some(certificate);
+    // }
 
     pub fn store_full_credential(
         &mut self,
@@ -83,9 +83,9 @@ impl CredentialsPool {
         self.entries[idx].tin = Some(tin);
     }
 
-    pub fn get_entry_by_user(&self, user_index: usize) -> &CredentialEntry {
-        &self.entries[user_index % self.entries.len()]
-    }
+    // pub fn get_entry_by_user(&self, user_index: usize) -> &CredentialEntry {
+    //     &self.entries[user_index % self.entries.len()]
+    // }
 
     pub fn get_entry(&self, index: usize) -> &CredentialEntry {
         &self.entries[index % self.entries.len()]
@@ -100,23 +100,23 @@ pub fn init_credentials_pool(num_users: usize) {
     *pool = CredentialsPool::new(num_users);
 }
 
-pub fn get_credential_index() -> usize {
-    CREDENTIALS_POOL.lock().unwrap().get_credential()
-}
+// pub fn get_credential_index() -> usize {
+//     CREDENTIALS_POOL.lock().unwrap().get_credential()
+// }
 
-pub fn get_credential_index_for_user(user_index: usize) -> usize {
-    let pool = CREDENTIALS_POOL.lock().unwrap();
-    pool.get_entry_by_user(user_index)
-        .credential_index
-        .unwrap_or_else(|| user_index)
-}
+// pub fn get_credential_index_for_user(user_index: usize) -> usize {
+//     let pool = CREDENTIALS_POOL.lock().unwrap();
+//     pool.get_entry_by_user(user_index)
+//         .credential_index
+//         .unwrap_or_else(|| user_index)
+// }
 
-pub fn store_certificate(index: usize, certificate: String) {
-    CREDENTIALS_POOL
-        .lock()
-        .unwrap()
-        .store_certificate(index, certificate);
-}
+// pub fn store_certificate(index: usize, certificate: String) {
+//     CREDENTIALS_POOL
+//         .lock()
+//         .unwrap()
+//         .store_certificate(index, certificate);
+// }
 
 pub fn store_full_credential(index: usize, certificate: String, device_uuid: String, tin: String) {
     CREDENTIALS_POOL
@@ -125,11 +125,11 @@ pub fn store_full_credential(index: usize, certificate: String, device_uuid: Str
         .store_full_credential(index, certificate, device_uuid, tin);
 }
 
-pub fn enroll_and_store(index: usize, certificate: String) {
-    let mut pool = CREDENTIALS_POOL.lock().unwrap();
-    let idx = index % pool.entries.len();
-    pool.entries[idx].certificate = Some(certificate);
-}
+// pub fn enroll_and_store(index: usize, certificate: String) {
+//     let mut pool = CREDENTIALS_POOL.lock().unwrap();
+//     let idx = index % pool.entries.len();
+//     pool.entries[idx].certificate = Some(certificate);
+// }
 
 pub fn generate_csr_for_pool_entry(device_uuid: &str, tin: &str, private_key_pem: &str) -> String {
     let pkey = PKey::private_key_from_pem(private_key_pem.as_bytes()).unwrap();
@@ -160,6 +160,7 @@ pub fn generate_signed_ubl_invoice(
     private_key_pem: Option<&str>,
     icv: i32,
     previous_invoice_hash: Option<&[u8]>,
+    uuid : Uuid,
 ) -> (String, String, i32) {
     if let (Some(cert_b64), Some(key_pem)) = (certificate_b64, private_key_pem) {
         return sign_invoice_template_based(
@@ -170,6 +171,7 @@ pub fn generate_signed_ubl_invoice(
             key_pem,
             icv,
             previous_invoice_hash,
+            uuid,
         );
     }
 
@@ -179,6 +181,7 @@ pub fn generate_signed_ubl_invoice(
         is_clearance,
         icv,
         previous_invoice_hash,
+        uuid
     );
 
     (unsigned_invoice.0, String::new(), unsigned_invoice.1)
@@ -190,10 +193,11 @@ fn generate_ubl_invoice_unsigned(
     is_clearance: bool,
     icv: i32,
     previous_invoice_hash: Option<&[u8]>,
+    uuid : Uuid,
 ) -> (String, i32) {
     let mut rng = rand::rng();
     let invoice_id = format!("INV-{}", rng.random_range(100000..999999));
-    let uuid = Uuid::new_v4().to_string();
+    let uuid = uuid;
     let issue_date = Utc::now().format("%Y-%m-%d").to_string();
     let issue_time = Utc::now().format("%H:%M:%S").to_string();
     let quantity: f64 = rng.random_range(1.0..10.0);
@@ -233,7 +237,7 @@ fn generate_ubl_invoice_unsigned(
     let qr_b64 = base64::engine::general_purpose::STANDARD.encode(qr_data.as_bytes());
 
     let invoice_body = format!(
-        r#"<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+        r##"<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
     xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
     xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
     xmlns:ext="urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2">
@@ -312,7 +316,7 @@ fn generate_ubl_invoice_unsigned(
             <cbc:PriceAmount currencyID="SDG">{}</cbc:PriceAmount>
         </cac:Price>
     </cac:InvoiceLine>
-</Invoice>"#,
+</Invoice>"##,
         profile_id,
         invoice_id,
         uuid,
@@ -323,21 +327,21 @@ fn generate_ubl_invoice_unsigned(
         qr_b64,
         supplier_tin,
         customer_tin,
-        format!("{:.2}", tax_amount),
-        format!("{:.2}", line_amount),
-        format!("{:.2}", payable_amount),
-        format!("{:.2}", payable_amount),
-        format!("{:.3}", quantity),
-        format!("{:.2}", line_amount),
-        format!("{:.2}", tax_amount),
-        format!("{:.2}", unit_price)
+        tax_amount,
+        line_amount,
+        payable_amount,
+        payable_amount,
+        quantity,
+        line_amount,
+        tax_amount,
+        unit_price
     );
 
     (invoice_body, next_icv)
 }
 
 pub fn canonicalize_c14n11(xml: &str) -> String {
-    use xml_c14n::{canonicalize_xml, CanonicalizationMode, CanonicalizationOptions};
+    use xml_c14n::{CanonicalizationMode, CanonicalizationOptions, canonicalize_xml};
 
     let options = CanonicalizationOptions {
         mode: CanonicalizationMode::Canonical1_1,
@@ -352,8 +356,8 @@ pub fn canonicalize_c14n11(xml: &str) -> String {
 }
 
 pub fn extract_invoice_for_signing(full_invoice_xml: &str) -> String {
-    use quick_xml::events::Event;
     use quick_xml::Reader;
+    use quick_xml::events::Event;
     use std::io::Cursor;
 
     #[derive(PartialEq)]
@@ -439,8 +443,8 @@ pub fn extract_invoice_for_signing(full_invoice_xml: &str) -> String {
                 }
             },
             Ok(Event::End(e)) => {
-                let local_name = e.local_name();
-                let name_str = std::str::from_utf8(local_name.as_ref()).unwrap_or("");
+                // let local_name = e.local_name();
+                // let name_str = std::str::from_utf8(local_name.as_ref()).unwrap_or("");
 
                 match state {
                     State::OutsideInvoice => {}
@@ -518,6 +522,7 @@ pub fn sign_invoice_template_based(
     private_key_pem: &str,
     icv: i32,
     previous_invoice_hash: Option<&[u8]>,
+    uuid : Uuid,
 ) -> (String, String, i32) {
     use openssl::sign::Signer;
     use openssl::x509::X509;
@@ -525,7 +530,7 @@ pub fn sign_invoice_template_based(
 
     let mut rng = rand::rng();
     let invoice_id = format!("INV-{}", rng.random_range(100000..999999));
-    let uuid = Uuid::new_v4().to_string();
+    let uuid = uuid;
     let issue_date = Utc::now().format("%Y-%m-%d").to_string();
     let issue_time = Utc::now().format("%H:%M:%S").to_string();
     let signing_time = Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
@@ -568,7 +573,7 @@ pub fn sign_invoice_template_based(
     let full_invoice = build_to_sign_content(
         profile_id,
         &invoice_id,
-        &uuid,
+        &uuid.to_string(),
         &issue_date,
         &issue_time,
         next_icv,
@@ -611,7 +616,7 @@ pub fn sign_invoice_template_based(
         let mut cert_hasher = Sha256::new();
         cert_hasher.update(&cert_der);
         let cert_digest = cert_hasher.finalize();
-        let cert_digest_b64 = base64::engine::general_purpose::STANDARD.encode(&cert_digest);
+        let cert_digest_b64 = base64::engine::general_purpose::STANDARD.encode(cert_digest);
         let cert_der_b64 = base64::engine::general_purpose::STANDARD.encode(&cert_der);
         let serial_bn = cert
             .serial_number()
@@ -634,7 +639,7 @@ pub fn sign_invoice_template_based(
     let signed_invoice = build_signed_invoice(
         profile_id,
         &invoice_id,
-        &uuid,
+        &uuid.to_string(),
         &issue_date,
         &issue_time,
         next_icv,

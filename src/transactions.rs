@@ -90,7 +90,7 @@ pub async fn submit_clearance(user: &mut GooseUser) -> TransactionResult {
 
     let supplier_tin = sess.tin.clone();
     let customer_tin = get_customer_tin(&supplier_tin);
-
+    let uuid = Uuid::new_v4();
     let (invoice_xml, invoice_hash, next_icv) = generate_signed_ubl_invoice(
         &supplier_tin,
         &customer_tin,
@@ -99,12 +99,13 @@ pub async fn submit_clearance(user: &mut GooseUser) -> TransactionResult {
         Some(&key),
         icv,
         pih.as_deref(),
+        uuid,
     );
 
     let invoice_b64 = base64::engine::general_purpose::STANDARD.encode(invoice_xml.as_bytes());
 
     let request_body = serde_json::json!({
-        "uuid": Uuid::new_v4().to_string(),
+        "uuid": uuid.to_string(),
         "invoice_hash": invoice_hash.clone(),
         "invoice": invoice_b64
     });
@@ -114,7 +115,7 @@ pub async fn submit_clearance(user: &mut GooseUser) -> TransactionResult {
         .path("/clear")
         .set_request_builder(
             user.get_request_builder(&GooseMethod::Post, "/clear")?
-                .header("X-Sandbox-Mode", "true")
+                // .header("X-Sandbox-Mode", "true")
                 .json(&request_body)
         )
         .build();
@@ -143,6 +144,7 @@ pub async fn submit_clearance(user: &mut GooseUser) -> TransactionResult {
     let sess = user.get_session_data::<UserSessionData>().cloned().unwrap();
     let mut updated = sess;
     updated.icv = next_icv;
+    
     if let Some(pih) = new_pih {
         updated.last_pih = Some(pih);
     }
@@ -167,7 +169,7 @@ pub async fn submit_reporting(user: &mut GooseUser) -> TransactionResult {
 
     let icv = sess.icv;
     let pih = sess.last_pih.clone();
-
+    let uuid = Uuid::new_v4();
     let supplier_tin = sess.tin.clone();
     let customer_tin = get_customer_tin(&supplier_tin);
 
@@ -179,6 +181,7 @@ pub async fn submit_reporting(user: &mut GooseUser) -> TransactionResult {
         Some(&key),
         icv,
         pih.as_deref(),
+        uuid
     );
 
     let invoice_b64 = base64::engine::general_purpose::STANDARD.encode(invoice_xml.as_bytes());
@@ -194,7 +197,7 @@ pub async fn submit_reporting(user: &mut GooseUser) -> TransactionResult {
         .path("/report")
         .set_request_builder(
             user.get_request_builder(&GooseMethod::Post, "/report")?
-                .header("X-Sandbox-Mode", "true")
+                // .header("X-Sandbox-Mode", "true")
                 .json(&request_body)
         )
         .build();
@@ -204,6 +207,7 @@ pub async fn submit_reporting(user: &mut GooseUser) -> TransactionResult {
     let sess = user.get_session_data::<UserSessionData>().cloned().unwrap();
     let mut updated = sess;
     updated.icv = next_icv;
+    updated.last_pih =Some(base64::engine::general_purpose::STANDARD.decode(invoice_hash).unwrap());
     user.set_session_data(updated);
 
     Ok(())

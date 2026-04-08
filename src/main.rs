@@ -7,15 +7,15 @@ mod transactions;
 use goose::config::GooseConfiguration;
 use goose::prelude::*;
 use gumdrop::Options;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-use generator::{init_credentials_pool, CREDENTIALS_POOL};
+use generator::{CREDENTIALS_POOL, init_credentials_pool};
 use pre_enroll::pre_enroll_all_users;
 use transactions::{health_check, submit_clearance, submit_reporting, verify_qr};
 
 fn init_tracing() {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("load_tester=debug,transaction=debug"));
+        .unwrap_or_else(|_| EnvFilter::new("load_tester=warn,transaction=warn"));
 
     tracing_subscriber::registry()
         .with(fmt::layer())
@@ -32,10 +32,7 @@ async fn main() -> Result<(), GooseError> {
 
     let host = configuration.host.to_string();
     let users = configuration.users.unwrap_or(10);
-    let run_time: u64 = configuration
-        .run_time
-        .parse()
-        .unwrap_or(60);
+    let run_time: u64 = configuration.run_time.parse().unwrap_or(60);
 
     println!("Initializing credentials pool with {} users...", users);
     init_credentials_pool(users);
@@ -45,7 +42,7 @@ async fn main() -> Result<(), GooseError> {
         .await
         .expect("Failed to pre-enroll users");
     println!("All users pre-enrolled successfully!");
-    
+
     println!("Starting load test...");
 
     println!("\nLoad testing STC Server: {}", host);
