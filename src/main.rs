@@ -11,7 +11,7 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use generator::{CREDENTIALS_POOL, init_credentials_pool};
 use pre_enroll::pre_enroll_all_users;
-use transactions::{health_check, submit_clearance, submit_reporting, verify_qr};
+use transactions::{set_sandbox_mode, health_check, submit_clearance, submit_reporting, verify_qr};
 
 fn init_tracing() {
     let filter = EnvFilter::try_from_default_env()
@@ -27,9 +27,14 @@ fn init_tracing() {
 async fn main() -> Result<(), GooseError> {
     init_tracing();
 
-    let configuration = GooseConfiguration::parse_args_default_or_exit();
-    let goose_attack = GooseAttack::initialize_with_config(configuration.clone())?;
+    let sandbox_enabled = std::env::var("SANDBOX").is_ok();
+    if sandbox_enabled {
+        set_sandbox_mode(true);
+    }
 
+    let configuration = GooseConfiguration::parse_args_default_or_exit();
+
+    let goose_attack = GooseAttack::initialize_with_config(configuration.clone())?;
     let host = configuration.host.to_string();
     let users = configuration.users.unwrap_or(10);
     let run_time: u64 = configuration.run_time.parse().unwrap_or(60);
@@ -53,6 +58,9 @@ async fn main() -> Result<(), GooseError> {
     println!("  - 50% Clearance (invoice submission)");
     println!("  - 40% Reporting (invoice submission)");
     println!("  - 5% QR Verify");
+    if sandbox_enabled {
+        println!("  - Sandbox mode: ENABLED");
+    }
 
     let _ = &CREDENTIALS_POOL;
 

@@ -1,11 +1,17 @@
 use base64::Engine;
 use goose::prelude::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tracing::debug;
 use uuid::Uuid;
 
 use crate::dto::{ClearanceResponse, QrVerifyRequest, UserSessionData};
 use crate::generator::{generate_random_qr_data, generate_signed_ubl_invoice, CREDENTIALS_POOL};
+
+static SANDBOX_MODE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_sandbox_mode(enabled: bool) {
+    SANDBOX_MODE.store(enabled, Ordering::SeqCst);
+}
 
 static USER_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -113,11 +119,13 @@ pub async fn submit_clearance(user: &mut GooseUser) -> TransactionResult {
     let goose_request = GooseRequest::builder()
         .method(GooseMethod::Post)
         .path("/clear")
-        .set_request_builder(
-            user.get_request_builder(&GooseMethod::Post, "/clear")?
-                // .header("X-Sandbox-Mode", "true")
-                .json(&request_body)
-        )
+        .set_request_builder({
+            let mut builder = user.get_request_builder(&GooseMethod::Post, "/clear")?;
+            if SANDBOX_MODE.load(Ordering::SeqCst) {
+                builder = builder.header("X-Sandbox-Mode", "true");
+            }
+            builder.json(&request_body)
+        })
         .build();
 
     let goose_metrics = user.request(goose_request).await?;
@@ -195,11 +203,13 @@ pub async fn submit_reporting(user: &mut GooseUser) -> TransactionResult {
     let goose_request = GooseRequest::builder()
         .method(GooseMethod::Post)
         .path("/report")
-        .set_request_builder(
-            user.get_request_builder(&GooseMethod::Post, "/report")?
-                // .header("X-Sandbox-Mode", "true")
-                .json(&request_body)
-        )
+        .set_request_builder({
+            let mut builder = user.get_request_builder(&GooseMethod::Post, "/report")?;
+            if SANDBOX_MODE.load(Ordering::SeqCst) {
+                builder = builder.header("X-Sandbox-Mode", "true");
+            }
+            builder.json(&request_body)
+        })
         .build();
 
     let _goose_metrics = user.request(goose_request).await?;
